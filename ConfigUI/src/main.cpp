@@ -5,7 +5,7 @@
 
 // Simple dialog-like UI
 static const wchar_t CLASS_NAME[] = L"GameBoosterUIClass";
-enum { IDC_EDIT = 101, IDC_SAVE = 102, IDC_INSTALL = 103 };
+enum { IDC_EDIT = 101, IDC_SAVE = 102, IDC_INSTALL = 103, IDC_STOP = 104, IDC_START = 105 };
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
@@ -16,6 +16,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         if (!current.empty()) SetWindowTextW(hEdit, current.c_str());
         CreateWindowW(L"BUTTON", L"Save", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 10, 70, 80, 26, hwnd, (HMENU)IDC_SAVE, NULL, NULL);
         CreateWindowW(L"BUTTON", L"Install", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 110, 70, 80, 26, hwnd, (HMENU)IDC_INSTALL, NULL, NULL);
+        CreateWindowW(L"BUTTON", L"Stop Monitor", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 10, 105, 90, 26, hwnd, (HMENU)IDC_STOP, NULL, NULL);
+        CreateWindowW(L"BUTTON", L"Start Monitor", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 110, 105, 90, 26, hwnd, (HMENU)IDC_START, NULL, NULL);
         break;
     }
     case WM_COMMAND: {
@@ -28,13 +30,45 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 MessageBoxW(hwnd, L"Please enter a value.", L"GameBooster", MB_OK | MB_ICONWARNING);
             } else {
                 ConfigManager::SaveSetting(L"CpuThreshold", val);
-                MessageBoxW(hwnd, L"Saved.", L"GameBooster", MB_OK | MB_ICONINFORMATION);
+                // Also try to write to ProgramFiles config (requires elevation)
+                wchar_t param[512];
+                swprintf_s(param, 512, L"-NoProfile -ExecutionPolicy Bypass -Command \"$c='[Settings]`nCpuThreshold=%s'; Set-Content -Path \"$env:ProgramFiles\\GameBooster\\config.ini\" -Value $c -Encoding UTF8\"", val.c_str());
+                HINSTANCE r = ShellExecuteW(NULL, L"runas", L"powershell", param, NULL, SW_SHOWNORMAL);
+                if ((INT_PTR)r <= 32) {
+                    MessageBoxW(hwnd, L"Saved (user settings). Could not write to ProgramFiles without elevation.", L"GameBooster", MB_OK | MB_ICONINFORMATION);
+                } else {
+                    MessageBoxW(hwnd, L"Saved and written to ProgramFiles config.", L"GameBooster", MB_OK | MB_ICONINFORMATION);
+                }
             }
         } else if (id == IDC_INSTALL) {
             // Try to run the local install.bat (created by build)
             HINSTANCE r = ShellExecuteW(NULL, L"open", L"install.bat", NULL, NULL, SW_SHOWNORMAL);
             if ((INT_PTR)r <= 32) {
                 MessageBoxW(hwnd, L"Could not launch installer. Run install.bat manually.", L"GameBooster", MB_OK | MB_ICONERROR);
+            }
+        } else if (id == IDC_STOP) {
+            // Try to open the global stop event and signal it
+            HANDLE h = OpenEventW(EVENT_MODIFY_STATE, FALSE, L"Global\\GameBooster_StopEvent");
+            if (h) {
+                SetEvent(h);
+                CloseHandle(h);
+                MessageBoxW(hwnd, L"Stop signal sent to MonitorService.", L"GameBooster", MB_OK | MB_ICONINFORMATION);
+            } else {
+                // Fallback: end the scheduled task (requires elevation)
+                HINSTANCE rr = ShellExecuteW(NULL, L"runas", L"schtasks", L"/End /TN \"GameBoosterMonitor\"", NULL, SW_SHOWNORMAL);
+                if ((INT_PTR)rr <= 32) {
+                    MessageBoxW(hwnd, L"Could not signal stop event or end task. Try running as Administrator.", L"GameBooster", MB_OK | MB_ICONERROR);
+                } else {
+                    MessageBoxW(hwnd, L"Requested task end via elevated schtasks.", L"GameBooster", MB_OK | MB_ICONINFORMATION);
+                }
+            }
+        } else if (id == IDC_START) {
+            // Start scheduled task (requires elevation)
+            HINSTANCE rr = ShellExecuteW(NULL, L"runas", L"schtasks", L"/Run /TN \"GameBoosterMonitor\"", NULL, SW_SHOWNORMAL);
+            if ((INT_PTR)rr <= 32) {
+                MessageBoxW(hwnd, L"Could not start MonitorService. Try running as Administrator.", L"GameBooster", MB_OK | MB_ICONERROR);
+            } else {
+                MessageBoxW(hwnd, L"Requested task start via elevated schtasks.", L"GameBooster", MB_OK | MB_ICONINFORMATION);
             }
         }
         break;
@@ -103,7 +137,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     RegisterClassW(&wc);
 
-    HWND hwnd = CreateWindowExW(0, CLASS_NAME, L"GameBooster - Configuration", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, CW_USEDEFAULT, CW_USEDEFAULT, 220, 150, NULL, NULL, hInstance, NULL);
+    HWND hwnd = CreateWindowExW(0, CLASS_NAME, L"GameBooster - Configuration", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, CW_USEDEFAULT, CW_USEDEFAULT, 220, 210, NULL, NULL, hInstance, NULL);
     if (!hwnd) return 0;
 
     ShowWindow(hwnd, nCmdShow);

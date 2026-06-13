@@ -56,47 +56,14 @@ if defined ISCCPATH (
         if %errorlevel% neq 0 echo [FEHLER] Installer-Build fehlgeschlagen.
     )
 ) else (
-    REM Fallback: use IExpress (built-in on Windows) to create a self-extracting EXE so no Inno Setup required
+    REM Build standalone installer by embedding binaries into a small C++ installer using a PowerShell generator
     if not exist dist mkdir dist
-    set "TARGET_EXE=%CD%\dist\GameBoosterInstaller.exe"
-    set "SED=%TEMP%\gamebooster.sed"
-    echo Erstelle IExpress SED: %SED%
-    > "%SED%" echo [Version]
-    >> "%SED%" echo Class=IEXPRESS
-    >> "%SED%" echo SEDVersion=3
-    >> "%SED%" echo.
-    >> "%SED%" echo [Options]
-    >> "%SED%" echo PackagePurpose=InstallApp
-    >> "%SED%" echo ShowInstallProgramWindow=1
-    >> "%SED%" echo HideExtractAnimation=0
-    >> "%SED%" echo UseLongFileName=1
-    >> "%SED%" echo PromptUser=0
-    >> "%SED%" echo AdminQuietInst=0
-    >> "%SED%" echo OverwritePrompt=YES
-    >> "%SED%" echo RebootMode=NoRestart
-    >> "%SED%" echo TargetName=%TARGET_EXE%
-    >> "%SED%" echo InstallCommand=install.bat
-    >> "%SED%" echo.
-    >> "%SED%" echo [SourceFiles]
-    >> "%SED%" echo SourceFiles0=bin
-    >> "%SED%" echo.
-    >> "%SED%" echo [SourceFiles0]
-    >> "%SED%" echo MonitorService.exe=.
-    >> "%SED%" echo ConfigUI.exe=.
-    >> "%SED%" echo install.bat=.
-
-    set "IEXPRESS=%windir%\system32\iexpress.exe"
-    if exist "%IEXPRESS%" (
-        echo Baue Selbstentpackendes EXE mit IExpress...
-        "%IEXPRESS%" /N "%SED%"
-        if exist "%TARGET_EXE%" (
-            echo Installer erstellt: %TARGET_EXE%
-        ) else (
-            echo [FEHLER] IExpress hat das Paket nicht erstellt.
-            echo Bitte Inno Setup installieren oder IExpress prüfen.
-        )
+    echo Generating self-contained installer via PowerShell generator...
+    powershell -NoProfile -ExecutionPolicy Bypass -File "tools\generate_installer.ps1" -OutDir "%CD%\dist"
+    if %errorlevel% neq 0 (
+        echo [FEHLER] Erstellung des eigenständigen Installers fehlgeschlagen.
     ) else (
-        echo Weder ISCC noch IExpress gefunden. Zum Erstellen des Installers Inno Setup installieren oder IExpress nutzen.
+        echo Installer erzeugt in dist\
     )
 )
 pause
