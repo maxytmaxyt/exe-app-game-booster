@@ -2,6 +2,7 @@
 #include <vector>
 #include "../../Shared/ConfigManager.h"
 #include "CpuMonitor.h"
+#include <tlhelp32.h> // REQUIRED for process snapshot functions
 
 void MonitorLoop() {
     // 1. Snapshot all processes
